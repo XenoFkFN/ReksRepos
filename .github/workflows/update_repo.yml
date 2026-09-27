@@ -1,0 +1,46 @@
+name: Update AltStore Repository
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs every day at midnight
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual trigger button via GitHub UI
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: Ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-python: '3.10'
+
+      - name: Install Scraping Dependecies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Execute Aggregator Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python update_repo.py
+
+      - name: Configure Static Pages Deployment
+        uses: actions/configure-pages@v4
+
+      - name: Upload Output Artifacts
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy Compiled JSON to GitHub Pages
+        uses: actions/deploy-pages@v4
