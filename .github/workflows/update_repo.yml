@@ -1,46 +1,135 @@
-name: Update AltStore Repository
+import os
+import json
+import re
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
-on:
-  schedule:
-    - cron: '0 0 * * *' # Runs every day at midnight
-  push:
-    branches:
-      - main
-  workflow_dispatch: # Allows manual trigger button via GitHub UI
+# Configuration
+REPO_NAME = "My Custom Sideload Source"
+REPO_IDENTIFIER = "com.custom.sideload.source"
+OUTPUT_FILE = "apps.json"
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+def get_github_releases(repo_path):
+    apps = []
+    api_url = f"https://github.com{repo_path}/releases/latest"
+    # Essential Headers to identify your request to GitHub
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "AltStore-Aggregator-Automation"
+    }
+    
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"token {token}"
+        
+    try:
+        response = requests.get(api_url, headers=headers)
+        print(f"[!] GitHub API Response for {repo_path}: Status {response.status_code}")
+        
+        if response.status_code != 200:
+            return apps
+            
+        data = response.json()
+        tag_name = data.get("tag_name", "1.0.0")
+        body = data.get("body", "No description provided.")
+        
+        for asset in data.get("assets", []):
+            asset_name = asset.get("name", "")
+            if asset_name.lower().endswith(".ipa"):
+                download_url = asset.get("browser_download_url")
+                app_title = asset_name.replace(".ipa", "").replace("-", " ").replace("_", " ")
+                app_id = f"com.github.{repo_path.replace('/', '.')}.{re.sub(r'[^a-zA-Z0-9]', '', asset_name.split('.')[0])}".lower()
+                
+                apps.append({
+                    "name": app_title,
+                    "bundleIdentifier": app_id,
+                    "version": tag_name.lstrip('v'),
+                    "versionDate": asset.get("updated_at"),
+                    "downloadURL": download_url,
+                    "localizedDescription": f"GitHub source: {repo_path}\n\n{body[:150]}...",
+                    "developerName": repo_path.split("/")[0],
+                    "size": asset.get("size", 0)
+                })
+                print(f"[+] Found GitHub IPA: {asset_name}")
+    except Exception as e:
+        print(f"[-] Error parsing GitHub repo {repo_path}: {e}")
+    return apps
 
-jobs:
-  build-and-deploy:
-    runs-on: Ubuntu-latest
-    steps:
-      - name: Checkout Codebase
-        uses: actions/checkout@v4
+def scrape_custom_urls(url):
+    apps = []
+    # Mask the script as a Safari Mobile web browser to avoid scraping firewalls
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        print(f"[!] Web Scraper Response for {url}: Status {response.status_code}")
+        
+        if response.status_code != 200:
+            return apps
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        links = soup.find_all(['a', 'iframe', 'source'], href=True)
+        
+        print(f"[*] Found {len(links)} total links on page. Filtering for IPAs...")
+        
+        for index, link in enumerate(links):
+            href = link.get('href', '')
+            if not href:
+                continue
+                
+            # Clean relative path tracking
+            if href.startswith('/'):
+                href = urljoin(url, href)
+                
+            if ".ipa" in href.lower():
+                clean_title = href.split('/')[-1].split('?')[0].replace(".ipa", "").replace("-", " ").replace("_", " ")
+                link_text = link.get_text().strip()
+                display_name = link_text if link_text and len(link_text) < 35 else clean_title
+                
+                app_id = f"com.scraped.{re.sub(r'[^a-zA-Z0-9]', '', display_name.split()[0])}".lower()
+                
+                apps.append({
+                    "name": display_name,
+                    "bundleIdentifier": app_id,
+                    "version": "1.0.0",
+                    "versionDate": "2026-01-01T00:00:00Z", 
+                    "downloadURL": href,
+                    "localizedDescription": f"Sideload package discovered at:\n{url}",
+                    "developerName": "External Web",
+                    "size": 0
+                })
+                print(f"[+] Extracted Web IPA Link: {href}")
+    except Exception as e:
+        print(f"[-] Error scraping web resource {url}: {e}")
+    return apps
 
-      - name: Setup Python environment
-        uses: actions/setup-python@v5
-        with:
-          python-python: '3.10'
+def main():
+    all_apps = []
+    
+    if os.path.exists("repos.txt"):
+        with open("repos.txt", "r") as f:
+            repos = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        for repo in repos:
+            all_apps.extend(get_github_releases(repo))
+            
+    if os.path.exists("urls.txt"):
+        with open("urls.txt", "r") as f:
+            urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        for url in urls:
+            all_apps.extend(scrape_custom_urls(url))
+            
+    repo_structure = {
+        "name": REPO_NAME,
+        "identifier": REPO_IDENTIFIER,
+        "apps": all_apps
+    }
+    
+    with open(OUTPUT_FILE, "w") as f:
+        json.dump(repo_structure, f, indent=2)
+    print(f"[=] Job finished. Total apps injected: {len(all_apps)}")
 
-      - name: Install Scraping Dependecies
-        run: |
-          pip install requests beautifulsoup4
-
-      - name: Execute Aggregator Script
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python update_repo.py
-
-      - name: Configure Static Pages Deployment
-        uses: actions/configure-pages@v4
-
-      - name: Upload Output Artifacts
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
-
-      - name: Deploy Compiled JSON to GitHub Pages
-        uses: actions/deploy-pages@v4
+if __name__ == "__main__":
+    main()
