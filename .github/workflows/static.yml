@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build-and-deploy:
@@ -25,17 +27,20 @@ jobs:
 
       - name: Install Scraping Dependencies
         run: |
-          pip install requests beautifulsoup4
+          pip install requests beautifulsoup4 packaging
 
       - name: Execute Aggregator Script
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python update_repo.py
 
-      - name: Deploy apps.json to GitHub Pages Branch
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Configure Static Pages Deployment
+        uses: actions/configure-pages@v5
+
+      - name: Upload Output Artifacts
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
-          publish_branch: gh-pages
-          keep_files: true
+          path: '.'
+
+      - name: Deploy Compiled JSON to GitHub Pages
+        uses: actions/deploy-pages@v4
