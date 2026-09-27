@@ -5,8 +5,8 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
-REPO_NAME = "My Custom Sideload Source"
-REPO_IDENTIFIER = "com.custom.sideload.source"
+REPO_NAME = "Rek's Repo's"
+REPO_IDENTIFIER = "com.reks.repo"
 OUTPUT_FILE = "apps.json"
 
 HEADERS = {
