@@ -1,0 +1,9 @@
+https://ipa.cypwn.xyz/cypwn.json
+content-download-egs.distro.on.epicgames.com/iOS/altstore/source.json
+https://marketplace.altstore.io/
+https://repo.starfiles.co/public?gbox
+https://fastsign.dev/repo.json
+https://github.com/swaggyP36000/TrollStore-IPAs
+https://iosgods.com/repo/
+
+
